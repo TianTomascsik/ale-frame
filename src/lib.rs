@@ -4,9 +4,11 @@
 //! and Subset-037 v3.2.0 §8.3.2. Provides streaming encode/decode of ALE
 //! packets over TCP for the ERTMS/ETCS signalling stack.
 //!
-//! Supports Class D operation (single TCP link) with CRC-CCITT checksum
-//! validation, connection handshake (AU1/AU2), data transfer (DT), and
-//! disconnect indication (DI).
+//! Supports Class D operation over a **single TCP connection** (restricted
+//! profile — the full Subset-098 Class D specifies dual redundant TCP links
+//! with duplicate T-Sequence suppression, which is not yet implemented).
+//! Includes CRC-CCITT checksum validation, connection handshake (AU1/AU2),
+//! data transfer (DT), and disconnect indication (DI).
 //!
 //! # ALEPKT wire format (10-byte header + variable user data):
 //! ```text
@@ -39,13 +41,14 @@ use std::io::{self, Write};
 /// Fixed ALEPKT header size in octets.
 pub const ALE_HEADER_SIZE: usize = 10;
 
-/// Number of header bytes covered by the checksum (all fields except the checksum itself).
-const ALE_CHECKSUM_INPUT_SIZE: usize = 8;
+/// Number of bytes covered by the checksum:
+/// PacketLength(2) + Version(1) + AppType(1) + TSeq(2) + NR(1) + PktType(1) = 8 bytes.
+const ALE_CHECKSUM_COVERED_SIZE: usize = 8;
 
 /// Default ALE protocol version.
 pub const ALE_VERSION: u8 = 1;
 
-/// N/R flag value for the normal link (Class D single-link always uses 1).
+/// N/R flag value for the normal link (this crate's single-link profile uses 1).
 pub const ALE_NR_FLAG_NORMAL: u8 = 1;
 
 /// Maximum ALEPKT user data size (Subset-098 §6.5.3.1.3).
@@ -72,6 +75,8 @@ pub const ALE_CLASS_D: u8 = 0x01;
 pub enum AleError {
     ChecksumMismatch { expected: u16, got: u16 },
     InvalidPacketType(u8),
+    /// Packet length field is too small (must be >= 8).
+    InvalidPacketLength(u16),
     PayloadTooLarge(usize),
     Io(io::Error),
 }
@@ -87,6 +92,9 @@ impl fmt::Display for AleError {
                 )
             }
             Self::InvalidPacketType(t) => write!(f, "invalid ALEPKT packet type: {}", t),
+            Self::InvalidPacketLength(n) => {
+                write!(f, "ALEPKT packet_length too small: {} (minimum 8)", n)
+            }
             Self::PayloadTooLarge(n) => write!(f, "ALEPKT payload too large: {} bytes", n),
             Self::Io(e) => write!(f, "ALE I/O error: {}", e),
         }
@@ -149,7 +157,7 @@ pub struct AleHeader {
     /// Normal/Redundant flag (1=Normal for Class D).
     pub nr_flag: u8,
     pub packet_type: u8,
-    /// CRC-CCITT checksum over the 8 bytes after Packet Length.
+    /// CRC-CCITT checksum over the preceding 8 bytes (PacketLength through PktType).
     pub checksum: u16,
 }
 
@@ -177,7 +185,7 @@ impl AleHeader {
         let packet_type = buf[7];
         let checksum = u16::from_be_bytes([buf[8], buf[9]]);
 
-        // Checksum covers the first 8 bytes of the header (Subset-098 §6.4.5):
+        // Checksum covers bytes 0..8: the 6 fields preceding the checksum (Subset-098 Table 6):
         // PacketLength(2) + Version(1) + AppType(1) + TSeqNum(2) + NR_Flag(1) + PktType(1) = 8 bytes
         let computed = crc_ccitt(&buf[0..8]);
 
@@ -216,9 +224,9 @@ impl AleHeader {
         user_data_len: usize,
     ) -> Self {
         // packet_length = header bytes after Packet Length field (8) + user data
-        let packet_length = (ALE_CHECKSUM_INPUT_SIZE + user_data_len) as u16;
+        let packet_length = (ALE_CHECKSUM_COVERED_SIZE + user_data_len) as u16;
 
-        // Build the 8 bytes that the checksum covers
+        // Build the 8 bytes that the checksum covers (PacketLength through PktType)
         let mut cksum_input = [0u8; 8];
         cksum_input[0..2].copy_from_slice(&packet_length.to_be_bytes());
         cksum_input[2] = version;
@@ -381,8 +389,12 @@ impl AleFrameReader {
 
                     if self.header_pos == ALE_HEADER_SIZE {
                         let header = AleHeader::decode(&self.header_buf)?;
-                        // payload length = packet_length - 8 (the 8 header bytes after Packet Length)
-                        let payload_len = header.packet_length as usize - ALE_CHECKSUM_INPUT_SIZE;
+                        // Reject malformed packet_length that would underflow the subtraction
+                        if (header.packet_length as usize) < ALE_CHECKSUM_COVERED_SIZE {
+                            return Err(AleError::InvalidPacketLength(header.packet_length));
+                        }
+                        // User data length = packet_length - 8 (the checksum-covered header fields)
+                        let payload_len = header.packet_length as usize - ALE_CHECKSUM_COVERED_SIZE;
                         if payload_len > ALE_MAX_USER_DATA {
                             return Err(AleError::PayloadTooLarge(payload_len));
                         }
@@ -778,5 +790,58 @@ mod tests {
     fn test_default_frame_reader() {
         let reader: AleFrameReader = Default::default();
         assert_eq!(reader.header_pos, 0);
+    }
+
+    #[test]
+    fn test_reject_too_small_packet_length() {
+        let mut buf = [0u8; ALE_HEADER_SIZE];
+        buf[0..2].copy_from_slice(&7u16.to_be_bytes()); // invalid: packet_length < 8
+        buf[2] = ALE_VERSION;
+        buf[3] = 0x1A;
+        buf[4..6].copy_from_slice(&0u16.to_be_bytes());
+        buf[6] = ALE_NR_FLAG_NORMAL;
+        buf[7] = ALE_PKT_DT;
+        let cksum = crc_ccitt(&buf[0..8]);
+        buf[8..10].copy_from_slice(&cksum.to_be_bytes());
+
+        // Header decode itself succeeds (it doesn't validate packet_length range)
+        let header = AleHeader::decode(&buf).unwrap();
+        assert_eq!(header.packet_length, 7);
+
+        // But feed() must reject it before the subtraction can underflow
+        let mut reader = AleFrameReader::new();
+        let result = reader.feed(&buf);
+        assert!(
+            matches!(result, Err(AleError::InvalidPacketLength(7))),
+            "should reject packet_length < 8, got: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_frame_roundtrip_packet_length_equals_8_plus_payload() {
+        let mut output = Vec::new();
+        let mut writer = AleFrameWriter::new(0x1A);
+
+        let payloads: &[&[u8]] = &[b"", b"short", &vec![0xAB; 200]];
+        for payload in payloads {
+            writer
+                .write_alepkt(&mut output, ALE_PKT_DT, payload)
+                .unwrap();
+        }
+
+        let mut reader = AleFrameReader::new();
+        let frames = reader.feed(&output).unwrap();
+        assert_eq!(frames.len(), 3);
+
+        for (frame, payload) in frames.iter().zip(payloads.iter()) {
+            assert_eq!(
+                frame.header.packet_length as usize,
+                8 + payload.len(),
+                "packet_length must equal 8 + user_data_len for payload of {} bytes",
+                payload.len()
+            );
+            assert_eq!(frame.user_data, *payload);
+        }
     }
 }

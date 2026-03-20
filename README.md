@@ -30,8 +30,9 @@ final inversion) per ISO/IEC 3309.
 
 - **Streaming reassembly** -- handles arbitrary TCP chunking with zero-copy
   accumulation of partial headers and payloads
-- **Class D support** -- single TCP link with transport sequence numbering and
-  duplicate detection
+- **Class D support (single-link profile)** -- single TCP connection with transport
+  sequence numbering. Note: full Subset-098 Class D requires dual redundant TCP
+  links with duplicate T-Sequence suppression, which is not yet implemented.
 - **Connection handshake** -- AU1 (Connection Request) and AU2 (Connection
   Confirm) encoding/decoding with ETCS-ID fields
 - **CRC-CCITT validation** -- verified against official test vectors from
