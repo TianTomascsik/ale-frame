@@ -17,10 +17,10 @@ Each ALE packet (ALEPKT) consists of a 10-byte header followed by variable-lengt
 user data:
 
 ```text
-┌──────────────┬─────────┬──────────┬───────────┬──────────┬──────────┬──────────┬───────────┐
+┌───────────────┬─────────┬──────────┬───────────┬──────────┬──────────┬──────────┬───────────┐
 │ Packet Length │ Version │ App Type │ T-Seq Num │ N/R Flag │ Pkt Type │ Checksum │ User Data │
-│   2 octets   │ 1 octet │ 1 octet  │ 2 octets  │ 1 octet  │ 1 octet  │ 2 octets │ variable  │
-└──────────────┴─────────┴──────────┴───────────┴──────────┴──────────┴──────────┴───────────┘
+│   2 octets    │ 1 octet │ 1 octet  │ 2 octets  │ 1 octet  │ 1 octet  │ 2 octets │ variable  │
+└───────────────┴─────────┴──────────┴───────────┴──────────┴──────────┴──────────┴───────────┘
 ```
 
 The header checksum uses CRC-CCITT (polynomial 0x1021, initial value 0xFFFF, no
