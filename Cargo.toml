@@ -9,3 +9,7 @@ keywords = ["euroradio", "etcs", "ertms", "railway", "ale"]
 categories = ["network-programming", "parser-implementations"]
 
 [dependencies]
+
+[[example]]
+name = "two_clients"
+path = "examples/two_clients.rs"

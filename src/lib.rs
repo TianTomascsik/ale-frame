@@ -64,7 +64,9 @@ pub const ALE_PKT_DT: u8 = 3;
 /// DI  — Disconnect Indication.
 pub const ALE_PKT_DI: u8 = 4;
 
-/// Class D coded value (Subset-098 §6.6.2.1.1).
+/// Class D single-link coded value (Subset-037 §8.3.2 / AU1 Class of Service
+/// field = 0x01 for single-link Class D). Note: full Subset-098 §6.6.2.1.6
+/// specifies 0x03 for dual-link Class D.
 pub const ALE_CLASS_D: u8 = 0x01;
 
 // =========================================================================================
@@ -303,10 +305,11 @@ impl AleFrameWriter {
         frame.extend_from_slice(user_data);
         writer.write_all(&frame).map_err(AleError::Io)?;
 
-        // Increment t_sequence for DT packets (Subset-098 §6.5.3.3.2.1)
-        if packet_type == ALE_PKT_DT || packet_type == ALE_PKT_DI {
-            self.t_sequence = self.t_sequence.wrapping_add(1);
-        }
+        // Increment t_sequence for every ALEPKT sent (Subset-098 §6.5.3.3.2.1:
+        // "Incremented by 1 for each subsequent ALEPKT sent").
+        // AU1/AU2 always *carry* value 0 (§6.5.2.6.4) but still advance the
+        // counter so that the first DT after handshake has T-Seq=1.
+        self.t_sequence = self.t_sequence.wrapping_add(1);
 
         Ok(())
     }
@@ -655,18 +658,18 @@ mod tests {
         writer
             .write_alepkt(&mut output, ALE_PKT_AU1, b"au1data")
             .unwrap();
-        // AU1 should not increment sequence
-        assert_eq!(writer.t_sequence(), 42);
+        // AU1 carries value 0 but still advances the counter (§6.5.3.3.2.1)
+        assert_eq!(writer.t_sequence(), 43);
 
         writer
             .write_alepkt(&mut output, ALE_PKT_AU2, b"au2data")
             .unwrap();
-        assert_eq!(writer.t_sequence(), 42);
+        assert_eq!(writer.t_sequence(), 44);
 
         let mut reader = AleFrameReader::new();
         let frames = reader.feed(&output).unwrap();
-        assert_eq!(frames[0].header.t_sequence, 0); // AU1 always 0
-        assert_eq!(frames[1].header.t_sequence, 0); // AU2 always 0
+        assert_eq!(frames[0].header.t_sequence, 0); // AU1 always carries 0
+        assert_eq!(frames[1].header.t_sequence, 0); // AU2 always carries 0
     }
 
     #[test]
