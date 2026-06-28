@@ -75,7 +75,10 @@ pub const ALE_CLASS_D: u8 = 0x01;
 
 #[derive(Debug)]
 pub enum AleError {
-    ChecksumMismatch { expected: u16, got: u16 },
+    ChecksumMismatch {
+        expected: u16,
+        got: u16,
+    },
     InvalidPacketType(u8),
     /// Packet length field is too small (must be >= 8).
     InvalidPacketLength(u16),

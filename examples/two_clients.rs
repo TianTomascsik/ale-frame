@@ -274,7 +274,10 @@ fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║  ale-frame: Two-Client Communication Example                ║");
     println!("║  Demonstrates full ALEPKT lifecycle over TCP                ║");
-    println!("║  (AU1 → AU2 → DT×{} → DI)                                  ║", NUM_MESSAGES);
+    println!(
+        "║  (AU1 → AU2 → DT×{} → DI)                                  ║",
+        NUM_MESSAGES
+    );
     println!("╚══════════════════════════════════════════════════════════════╝");
     println!();
 
