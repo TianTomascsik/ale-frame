@@ -219,7 +219,11 @@ impl AleHeader {
     }
 
     /// Build a header with the correct checksum.
-    #[must_use]
+    ///
+    /// Errors with [`AleError::PayloadTooLarge`] if `user_data_len` exceeds
+    /// [`ALE_MAX_USER_DATA`]: the 16-bit Packet Length field (Subset-098
+    /// §6.5.3.1.3) would otherwise silently truncate, so the length is validated
+    /// with a checked conversion rather than an unchecked `as u16` cast (DP-14).
     pub fn build(
         version: u8,
         app_type: u8,
@@ -227,9 +231,15 @@ impl AleHeader {
         nr_flag: u8,
         packet_type: u8,
         user_data_len: usize,
-    ) -> Self {
-        // packet_length = header bytes after Packet Length field (8) + user data
-        let packet_length = (ALE_CHECKSUM_COVERED_SIZE + user_data_len) as u16;
+    ) -> Result<Self, AleError> {
+        if user_data_len > ALE_MAX_USER_DATA {
+            return Err(AleError::PayloadTooLarge(user_data_len));
+        }
+        // packet_length = header bytes after Packet Length field (8) + user data.
+        // The check above guarantees this fits in `u16`; the `try_from` keeps the
+        // conversion checked (no silent narrowing) rather than trusting it.
+        let packet_length = u16::try_from(ALE_CHECKSUM_COVERED_SIZE + user_data_len)
+            .map_err(|_| AleError::PayloadTooLarge(user_data_len))?;
 
         // Build the 8 bytes that the checksum covers (PacketLength through PktType)
         let mut cksum_input = [0u8; 8];
@@ -242,7 +252,7 @@ impl AleHeader {
 
         let checksum = crc_ccitt(&cksum_input);
 
-        Self {
+        Ok(Self {
             packet_length,
             version,
             app_type,
@@ -250,7 +260,7 @@ impl AleHeader {
             nr_flag,
             packet_type,
             checksum,
-        }
+        })
     }
 }
 
@@ -284,15 +294,14 @@ impl AleFrameWriter {
         packet_type: u8,
         user_data: &[u8],
     ) -> Result<(), AleError> {
-        if user_data.len() > ALE_MAX_USER_DATA {
-            return Err(AleError::PayloadTooLarge(user_data.len()));
-        }
-
         let seq = match packet_type {
             ALE_PKT_AU1 | ALE_PKT_AU2 => 0,
             _ => self.t_sequence,
         };
 
+        // `build` validates the payload length (single source of truth) and
+        // returns `PayloadTooLarge` before any bytes are written or the sequence
+        // counter advances.
         let header = AleHeader::build(
             self.version,
             self.app_type,
@@ -300,7 +309,7 @@ impl AleFrameWriter {
             ALE_NR_FLAG_NORMAL,
             packet_type,
             user_data.len(),
-        );
+        )?;
 
         let encoded = header.encode();
         let mut frame = Vec::with_capacity(ALE_HEADER_SIZE + user_data.len());
@@ -419,7 +428,7 @@ impl AleFrameReader {
                         }
                     }
                 }
-                AleReadState::ReadingPayload { .. } => {
+                AleReadState::ReadingPayload { header } => {
                     let need = self.expected_payload_len - self.payload_pos;
                     let avail = data.len() - pos;
                     let copy = need.min(avail);
@@ -429,12 +438,11 @@ impl AleFrameReader {
                     pos += copy;
 
                     if self.payload_pos == self.expected_payload_len {
-                        // Take the header out of the state, transition back to ReadingHeader
-                        let prev = std::mem::replace(&mut self.state, AleReadState::ReadingHeader);
-                        let header = match prev {
-                            AleReadState::ReadingPayload { header } => header,
-                            _ => unreachable!(),
-                        };
+                        // Clone the header out of the state (a cheap `Clone` of 9
+                        // scalar fields) and transition back, without a
+                        // `mem::replace` + impossible-`unreachable!()` arm (DP-14).
+                        let header = header.clone();
+                        self.state = AleReadState::ReadingHeader;
                         frames.push(AleFrame {
                             header,
                             user_data: self.payload_buf[..self.expected_payload_len].to_vec(),
@@ -554,7 +562,8 @@ mod tests {
 
     #[test]
     fn test_header_roundtrip() {
-        let header = AleHeader::build(ALE_VERSION, 0x1A, 42, ALE_NR_FLAG_NORMAL, ALE_PKT_DT, 100);
+        let header =
+            AleHeader::build(ALE_VERSION, 0x1A, 42, ALE_NR_FLAG_NORMAL, ALE_PKT_DT, 100).unwrap();
         let encoded = header.encode();
         let decoded = AleHeader::decode(&encoded).expect("decode should succeed");
         assert_eq!(decoded.version, ALE_VERSION);
@@ -567,9 +576,42 @@ mod tests {
         assert_eq!(decoded.packet_length, 108);
     }
 
+    // DP-14: `build` rejects an oversize payload instead of silently truncating
+    // packet_length via `as u16`.
+    #[test]
+    fn test_build_rejects_oversize() {
+        let err = AleHeader::build(
+            ALE_VERSION,
+            0x1A,
+            0,
+            ALE_NR_FLAG_NORMAL,
+            ALE_PKT_DT,
+            ALE_MAX_USER_DATA + 1,
+        );
+        assert!(matches!(err, Err(AleError::PayloadTooLarge(n)) if n == ALE_MAX_USER_DATA + 1));
+    }
+
+    #[test]
+    fn test_build_accepts_max_payload() {
+        let h = AleHeader::build(
+            ALE_VERSION,
+            0x1A,
+            0,
+            ALE_NR_FLAG_NORMAL,
+            ALE_PKT_DT,
+            ALE_MAX_USER_DATA,
+        )
+        .expect("max payload must build");
+        assert_eq!(
+            h.packet_length as usize,
+            ALE_CHECKSUM_COVERED_SIZE + ALE_MAX_USER_DATA
+        );
+    }
+
     #[test]
     fn test_checksum_failure_detected() {
-        let header = AleHeader::build(ALE_VERSION, 0x1A, 0, ALE_NR_FLAG_NORMAL, ALE_PKT_AU1, 20);
+        let header =
+            AleHeader::build(ALE_VERSION, 0x1A, 0, ALE_NR_FLAG_NORMAL, ALE_PKT_AU1, 20).unwrap();
         let mut encoded = header.encode();
         // Corrupt one byte
         encoded[3] ^= 0xFF;
@@ -829,7 +871,7 @@ mod tests {
         let mut output = Vec::new();
         let mut writer = AleFrameWriter::new(0x1A);
 
-        let payloads: &[&[u8]] = &[b"", b"short", &vec![0xAB; 200]];
+        let payloads: &[&[u8]] = &[b"", b"short", &[0xAB; 200]];
         for payload in payloads {
             writer
                 .write_alepkt(&mut output, ALE_PKT_DT, payload)

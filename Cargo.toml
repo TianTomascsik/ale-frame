@@ -1,6 +1,8 @@
 [package]
 name = "ale-frame"
-version = "0.1.0"
+# 0.2.0: `AleHeader::build` is now fallible (returns `Result`, DP-14) — a
+# semver-breaking public API change.
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.65"
 description = "ALEPKT framing for EuroRadio (ERTMS/ETCS) communication per UNISIG Subset-098 and Subset-037"

@@ -155,7 +155,8 @@ fn run_server(listener: TcpListener) {
                             ALE_NR_FLAG_NORMAL,
                             ALE_PKT_DT,
                             response.len(),
-                        ),
+                        )
+                        .expect("response fits ALE_MAX_USER_DATA"),
                         user_data: response.into_bytes(),
                     },
                 );
