@@ -270,6 +270,23 @@ assert_eq!(info.calling_etcs_id, 0x00001234);
 | UNISIG Subset-037 v3.2.0 | §8.3.2.4 | Listening port (7911) |
 | UNISIG Subset-037 v3.2.0 | Table 41 | Applicability conditions of Subset-098 for OBU |
 
+### Obtaining the specifications
+
+The UNISIG subsets are published by the European Union Agency for Railways
+(ERA) as part of the public **Set of Specifications #3** (CCS TSI Annex A).
+Subset-037 is index 010 and Subset-098 is index 063 of that set; both can be
+downloaded from the ERA website (search for "ERTMS Set of Specifications 3").
+The PDFs are copyrighted by UNISIG and are therefore **not** redistributed in
+this repository.
+
+## Status and disclaimer
+
+This crate is a research/thesis implementation. It is **not** developed,
+assessed, or certified according to EN 50128 / EN 50159 or any other
+CENELEC/railway safety standard, and it must not be used in a safety-related
+deployment. It implements the restricted single-link Class D profile only
+(see above) and is provided "as is", without warranty of any kind.
+
 ## Testing
 
 ```sh
@@ -282,4 +299,9 @@ TCP segmentation, sequence number wrapping, and connection handshake encoding.
 
 ## License
 
-Licensed under the MIT License. See [LICENSE](LICENSE) for details.
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.

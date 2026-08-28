@@ -5,25 +5,25 @@ ALEPKT communication over TCP.
 
 ## Adding the dependency
 
+### From the git repository
+
+```toml
+[dependencies]
+ale-frame = { git = "https://github.com/TianTomascsik/ale-frame.git", tag = "v0.2.0" }
+```
+
+Or with a renamed import:
+
+```toml
+[dependencies]
+ale_pipe = { git = "https://github.com/TianTomascsik/ale-frame.git", tag = "v0.2.0", package = "ale-frame" }
+```
+
 ### As a path dependency (monorepo / git submodule)
 
 ```toml
 [dependencies]
 ale-frame = { path = "../ale-frame" }
-```
-
-Or with a renamed import (as used by the gateway crate):
-
-```toml
-[dependencies]
-ale_pipe = { path = "../ale-frame", package = "ale-frame" }
-```
-
-### From a git repository
-
-```toml
-[dependencies]
-ale-frame = { git = "https://your-repo.example.com/ale-frame.git", branch = "main" }
 ```
 
 ### Minimum Rust version

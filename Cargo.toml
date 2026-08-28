@@ -1,14 +1,20 @@
 [package]
 name = "ale-frame"
-# 0.2.0: `AleHeader::build` is now fallible (returns `Result`, DP-14) — a
-# semver-breaking public API change.
+# 0.2.0: `AleHeader::build` is now fallible (returns `Result` so an oversize
+# payload is rejected instead of silently truncated) — a semver-breaking
+# public API change.
 version = "0.2.0"
 edition = "2021"
 rust-version = "1.65"
 description = "ALEPKT framing for EuroRadio (ERTMS/ETCS) communication per UNISIG Subset-098 and Subset-037"
-license = "MIT"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/TianTomascsik/ale-frame"
+documentation = "https://docs.rs/ale-frame"
+readme = "README.md"
+authors = ["Tian Tomascsik <tian.tomascsik@gmail.com>"]
 keywords = ["euroradio", "etcs", "ertms", "railway", "ale"]
 categories = ["network-programming", "parser-implementations"]
+exclude = ["*.pdf", "target/"]
 
 [dependencies]
 

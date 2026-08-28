@@ -10,6 +10,10 @@
 //! Includes CRC-CCITT checksum validation, connection handshake (AU1/AU2),
 //! data transfer (DT), and disconnect indication (DI).
 //!
+//! **Status:** research/thesis implementation. Not developed, assessed, or
+//! certified per EN 50128 / EN 50159 or any other CENELEC/railway safety
+//! standard; must not be used in a safety-related deployment.
+//!
 //! # ALEPKT wire format (10-byte header + variable user data):
 //! ```text
 //! | Packet Length | Version | App Type | T-Seq Num | N/R Flag | Pkt Type | Checksum | User Data |
@@ -30,6 +34,9 @@
 //! let frames = reader.feed(&buf).unwrap();
 //! assert_eq!(frames[0].user_data, b"hello");
 //! ```
+
+#![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
 use std::fmt;
 use std::io::{self, Write};
@@ -73,16 +80,25 @@ pub const ALE_CLASS_D: u8 = 0x01;
 //                                     ERROR TYPE
 // =========================================================================================
 
+/// Errors raised while encoding or decoding ALEPKT frames.
 #[derive(Debug)]
 pub enum AleError {
+    /// The CRC-CCITT checksum in a received header does not match the
+    /// checksum computed over the preceding 8 header bytes.
     ChecksumMismatch {
+        /// Checksum computed locally over the received header bytes.
         expected: u16,
+        /// Checksum carried in the received header.
         got: u16,
     },
+    /// The Packet Type field holds a value outside Subset-098 Table 10.
     InvalidPacketType(u8),
     /// Packet length field is too small (must be >= 8).
     InvalidPacketLength(u16),
+    /// User data exceeds [`ALE_MAX_USER_DATA`]; the 16-bit Packet Length
+    /// field cannot represent the frame without truncation.
     PayloadTooLarge(usize),
+    /// An underlying I/O error while writing a frame.
     Io(io::Error),
 }
 
@@ -155,12 +171,15 @@ pub fn crc_ccitt(data: &[u8]) -> u16 {
 pub struct AleHeader {
     /// Length of everything after this 2-byte field (header bytes + user data).
     pub packet_length: u16,
+    /// ALE protocol version (Subset-098 §6.4.5.1.5; currently [`ALE_VERSION`]).
     pub version: u8,
+    /// Application Type: first 5 bits main type, last 3 bits minor type.
     pub app_type: u8,
     /// Transport Sequence Number (Class D: increments per ALEPKT, wraps 65535→0).
     pub t_sequence: u16,
     /// Normal/Redundant flag (1=Normal for Class D).
     pub nr_flag: u8,
+    /// Packet type (AU1/AU2/DT/DI…, Subset-098 Table 10).
     pub packet_type: u8,
     /// CRC-CCITT checksum over the preceding 8 bytes (PacketLength through PktType).
     pub checksum: u16,
@@ -223,7 +242,7 @@ impl AleHeader {
     /// Errors with [`AleError::PayloadTooLarge`] if `user_data_len` exceeds
     /// [`ALE_MAX_USER_DATA`]: the 16-bit Packet Length field (Subset-098
     /// §6.5.3.1.3) would otherwise silently truncate, so the length is validated
-    /// with a checked conversion rather than an unchecked `as u16` cast (DP-14).
+    /// with a checked conversion rather than an unchecked `as u16` cast.
     pub fn build(
         version: u8,
         app_type: u8,
@@ -276,6 +295,7 @@ pub struct AleFrameWriter {
 }
 
 impl AleFrameWriter {
+    /// Create a writer for the given Application Type, starting at T-Sequence 0.
     pub fn new(app_type: u8) -> Self {
         Self {
             t_sequence: 0,
@@ -339,7 +359,9 @@ impl AleFrameWriter {
 /// Completed ALEPKT frame (header + user data).
 #[derive(Debug, Clone)]
 pub struct AleFrame {
+    /// The decoded 10-byte ALEPKT header.
     pub header: AleHeader,
+    /// The frame's user data (payload after the header).
     pub user_data: Vec<u8>,
 }
 
@@ -372,6 +394,7 @@ impl Default for AleFrameReader {
 }
 
 impl AleFrameReader {
+    /// Create a reader with empty reassembly state, expecting a header next.
     pub fn new() -> Self {
         Self {
             state: AleReadState::ReadingHeader,
@@ -440,7 +463,7 @@ impl AleFrameReader {
                     if self.payload_pos == self.expected_payload_len {
                         // Clone the header out of the state (a cheap `Clone` of 9
                         // scalar fields) and transition back, without a
-                        // `mem::replace` + impossible-`unreachable!()` arm (DP-14).
+                        // `mem::replace` + impossible-`unreachable!()` arm.
                         let header = header.clone();
                         self.state = AleReadState::ReadingHeader;
                         frames.push(AleFrame {
@@ -465,8 +488,11 @@ impl AleFrameReader {
 /// AU1 connection information (Subset-098 §6.5.2.4.2).
 #[derive(Debug, Clone)]
 pub struct AleAu1Info {
+    /// ETCS-ID of the calling entity (initiator).
     pub calling_etcs_id: u32,
+    /// ETCS-ID of the called entity (responder).
     pub called_etcs_id: u32,
+    /// Requested Class of Service (Class D: coded value 0x03, see README).
     pub class_of_service: u8,
 }
 
@@ -503,10 +529,12 @@ impl AleAu1Info {
 /// AU2 connection info (Subset-098 §6.5.2.4.7).
 #[derive(Debug, Clone)]
 pub struct AleAu2Info {
+    /// ETCS-ID of the responding entity.
     pub responding_etcs_id: u32,
 }
 
 impl AleAu2Info {
+    /// Encode the AU2 info followed by the safety-layer SaPDU bytes.
     pub fn encode(&self, sapdu: &[u8]) -> Vec<u8> {
         let mut buf = Vec::with_capacity(4 + sapdu.len());
         buf.extend_from_slice(&self.responding_etcs_id.to_be_bytes());
@@ -514,6 +542,8 @@ impl AleAu2Info {
         buf
     }
 
+    /// Decode AU2 info from `data`, returning it with the remaining SaPDU
+    /// bytes, or `None` if `data` is shorter than the 4-byte AU2 prefix.
     pub fn decode(data: &[u8]) -> Option<(Self, &[u8])> {
         if data.len() < 4 {
             return None;
@@ -576,7 +606,7 @@ mod tests {
         assert_eq!(decoded.packet_length, 108);
     }
 
-    // DP-14: `build` rejects an oversize payload instead of silently truncating
+    // `build` rejects an oversize payload instead of silently truncating
     // packet_length via `as u16`.
     #[test]
     fn test_build_rejects_oversize() {
