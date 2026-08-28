@@ -240,9 +240,8 @@ impl AleHeader {
     /// Build a header with the correct checksum.
     ///
     /// Errors with [`AleError::PayloadTooLarge`] if `user_data_len` exceeds
-    /// [`ALE_MAX_USER_DATA`]: the 16-bit Packet Length field (Subset-098
-    /// §6.5.3.1.3) would otherwise silently truncate, so the length is validated
-    /// with a checked conversion rather than an unchecked `as u16` cast.
+    /// [`ALE_MAX_USER_DATA`], the largest payload the 16-bit Packet Length
+    /// field (Subset-098 §6.5.3.1.3) can represent.
     pub fn build(
         version: u8,
         app_type: u8,
@@ -254,9 +253,8 @@ impl AleHeader {
         if user_data_len > ALE_MAX_USER_DATA {
             return Err(AleError::PayloadTooLarge(user_data_len));
         }
-        // packet_length = header bytes after Packet Length field (8) + user data.
-        // The check above guarantees this fits in `u16`; the `try_from` keeps the
-        // conversion checked (no silent narrowing) rather than trusting it.
+        // packet_length = header bytes after Packet Length field (8) + user data;
+        // the check above guarantees this fits in `u16`.
         let packet_length = u16::try_from(ALE_CHECKSUM_COVERED_SIZE + user_data_len)
             .map_err(|_| AleError::PayloadTooLarge(user_data_len))?;
 
@@ -461,9 +459,8 @@ impl AleFrameReader {
                     pos += copy;
 
                     if self.payload_pos == self.expected_payload_len {
-                        // Clone the header out of the state (a cheap `Clone` of 9
-                        // scalar fields) and transition back, without a
-                        // `mem::replace` + impossible-`unreachable!()` arm.
+                        // Cloning the header is cheap (7 scalar fields) and
+                        // lets the state transition back to ReadingHeader.
                         let header = header.clone();
                         self.state = AleReadState::ReadingHeader;
                         frames.push(AleFrame {
@@ -492,7 +489,9 @@ pub struct AleAu1Info {
     pub calling_etcs_id: u32,
     /// ETCS-ID of the called entity (responder).
     pub called_etcs_id: u32,
-    /// Requested Class of Service (Class D: coded value 0x03, see README).
+    /// Requested Class of Service. Use [`ALE_CLASS_D`] (0x01, single-link
+    /// Class D per Subset-037 §8.3.2); full Subset-098 §6.6.2.1.6 codes
+    /// dual-link Class D as 0x03.
     pub class_of_service: u8,
 }
 

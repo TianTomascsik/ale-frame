@@ -272,14 +272,11 @@ fn run_client(server_addr: std::net::SocketAddr) {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 fn main() {
-    println!("╔══════════════════════════════════════════════════════════════╗");
-    println!("║  ale-frame: Two-Client Communication Example                ║");
-    println!("║  Demonstrates full ALEPKT lifecycle over TCP                ║");
+    println!("ale-frame: two-client communication example");
     println!(
-        "║  (AU1 → AU2 → DT×{} → DI)                                  ║",
-        NUM_MESSAGES
+        "Demonstrates the full ALEPKT lifecycle over TCP (AU1 → AU2 → DT×{NUM_MESSAGES} → DI)"
     );
-    println!("╚══════════════════════════════════════════════════════════════╝");
+    println!("--------------------------------------------------------------");
     println!();
 
     // Bind to port 0 so the OS assigns an available port (avoids conflicts)

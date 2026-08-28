@@ -1,8 +1,5 @@
 [package]
 name = "ale-frame"
-# 0.2.0: `AleHeader::build` is now fallible (returns `Result` so an oversize
-# payload is rejected instead of silently truncated) — a semver-breaking
-# public API change.
 version = "0.2.0"
 edition = "2021"
 rust-version = "1.65"
@@ -14,10 +11,5 @@ readme = "README.md"
 authors = ["Tian Tomascsik <tian.tomascsik@gmail.com>"]
 keywords = ["euroradio", "etcs", "ertms", "railway", "ale"]
 categories = ["network-programming", "parser-implementations"]
-exclude = ["*.pdf", "target/"]
 
 [dependencies]
-
-[[example]]
-name = "two_clients"
-path = "examples/two_clients.rs"

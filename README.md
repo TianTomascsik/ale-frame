@@ -5,6 +5,11 @@ ALEPKT framing for EuroRadio (ERTMS/ETCS) communication, implemented in Rust.
 Provides streaming encode and decode of ALE packets over TCP as specified in
 **UNISIG Subset-098 v3.0.0** (§6.4.5) and **Subset-037 v3.2.0** (§8.3.2).
 
+**See also:** [INTEGRATION.md](INTEGRATION.md) for a step-by-step integration
+guide, [`examples/two_clients.rs`](examples/two_clients.rs) for a runnable
+end-to-end lifecycle demo (`cargo run --example two_clients`), and
+[CHANGELOG.md](CHANGELOG.md) for release history.
+
 ## Background
 
 In the European Train Control System (ETCS), trackside and on-board equipment

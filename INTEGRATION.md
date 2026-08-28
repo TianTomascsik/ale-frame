@@ -80,7 +80,7 @@ writer.write_alepkt(&mut tcp_stream, ALE_PKT_AU1, &payload)?;
 **Responder receives AU1 and sends AU2:**
 
 ```rust
-let frame = read_frame(&mut tcp_stream, &mut reader); // see helper below
+let frame = read_one_frame(&mut tcp_stream, &mut reader); // see helper below
 assert_eq!(frame.header.packet_type, ALE_PKT_AU1);
 
 let (au1_info, sapdu) = AleAu1Info::decode(&frame.user_data)
